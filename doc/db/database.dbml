@@ -1,0 +1,41 @@
+Enum "product_size_enum" {
+  "small"
+  "large"
+}
+
+Table "user" {
+  "id" bigint [pk, increment]
+  "phone_number" char(11) [unique, not null]
+  "hashed_password" varchar(255) [not null]
+  "created_at" timestamp [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table "session" {
+  "id" varchar(36) [pk]
+  "user_id" bigint [not null]
+  "refresh_token" varchar(285) [not null]
+  "user_agent" varchar(255) [not null]
+  "client_ip" varchar(45) [not null]
+  "is_blocked" tinyint(1) [not null, default: 0]
+  "expired_at" timestamp [not null]
+  "created_at" timestamp [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table "product" {
+  "id" bigint [pk, increment]
+  "user_id" bigint [not null]
+  "category" varchar(100) [not null]
+  "price" int(10) [not null]
+  "cost" int(10) [not null]
+  "name" varchar(100) [not null]
+  "description" text [not null]
+  "barcode" varchar(255) [unique, not null]
+  "expiration_date" date [not null]
+  "size" product_size_enum [not null]
+  "created_at" timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  "updated_at" timestamp [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Ref:"user"."id" < "session"."user_id" [delete: cascade]
+
+Ref:"user"."id" < "product"."user_id" [delete: cascade]

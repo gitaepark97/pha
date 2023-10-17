@@ -1,0 +1,31 @@
+version: "3"
+
+services:
+  mysql:
+    image: mysql:5.7
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root_drowssap
+      MYSQL_USER: hugo
+      MYSQL_PASSWORD: hugo_drowssap
+      MYSQL_DATABASE: pha
+      TZ: Asia/Seoul      
+    platform: linux/x86_64
+    command: ['mysqld', '--character-set-server=utf8mb4', '--collation-server=utf8mb4_unicode_ci']
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost", "-u", "hugo", "-phugo_drowssap"]
+      timeout: 20s
+      retries: 10
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: server
+    ports:
+      - 8080:8080
+    environment:
+      - DB_SOURCE=hugo:hugo_drowssap@tcp(mysql:3306)/pha?parseTime=true
+    depends_on:
+      mysql:
+        condition: service_healthy
+    command: ["/app/main"]

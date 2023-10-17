@@ -1,0 +1,95 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Go 1.x
+        uses: actions/setup-go@v2
+        with:
+          go-version: ^1.20
+        id: go
+
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v2
+
+      - name: Install golang-migrate
+        run: |
+          curl -L https://github.com/golang-migrate/migrate/releases/download/v4.14.1/migrate.linux-amd64.tar.gz | tar xvz
+          sudo mv migrate.linux-amd64 /usr/bin/migrate
+          which migrate
+
+      - name: Set up Docker
+        uses: docker-practice/actions-setup-docker@master
+        timeout-minutes: 12
+  
+      - name: Create DB
+        run:
+          make createdb
+
+      - name: Run migrations
+        run: |
+          sleep 30
+          make migrateup
+
+      - name: Test
+        run: |
+          make test
+
+  build:
+    needs: test
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      - name: Load secrets and save to app.env
+        run: aws secretsmanager get-secret-value --secret-id ${{ secrets.AWS_SECRETS_MANAGER_NAME }} --query SecretString --output text | jq -r 'to_entries|map("\(.key)=\(.value)")|.[]' > ./app.env
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push image to Amazon ECR
+        run: |
+          docker build -t ${{ secrets.ECR_URI }}:latest .
+          docker push -a ${{ secrets.ECR_URI }}
+
+  deploy:
+    needs: build
+    name: Deploy
+    runs-on: [self-hosted]
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Pull image from Amazon ECR and restart container
+        run: |
+          docker pull ${{ secrets.ECR_URI }}:latest
+          docker stop server && docker rm server
+          docker run -d -p 80:8080 --name server --network pha --restart unless-stopped ${{ secrets.ECR_URI }}:latest
+          docker system prune -af
